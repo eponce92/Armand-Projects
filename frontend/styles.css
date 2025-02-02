@@ -711,28 +711,35 @@ body {
 }
 
 .gallery-loading-content .status-text {
-  margin: 1rem 0;
+  margin: 2rem 0;
   color: var(--greyDark);
-  font-size: 1.4rem;
+  font-size: 1.6rem;
+  font-weight: 500;
 }
 
 .progress-container {
   background: var(--greyLight-1);
-  border-radius: 100px;
-  padding: 0.25rem;
+  border-radius: 2rem;
+  padding: 0.4rem;
   position: relative;
   overflow: hidden;
   box-shadow: var(--inner-shadow);
+  margin: 2rem 0;
+  height: 3.2rem;
 }
 
 .progress-bar {
-  height: 8px;
+  height: 100%;
   background: linear-gradient(90deg, var(--primary-dark) 0%, var(--primary) 50%, var(--primary-light) 100%);
-  border-radius: 100px;
+  border-radius: 1.6rem;
   transition: width 0.3s ease;
   width: 0%;
   box-shadow: inset .2rem .2rem 1rem var(--primary-light), 
               inset -.2rem -.2rem 1rem var(--primary-dark);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .progress-text {
@@ -740,9 +747,12 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: var(--greyDark);
-  font-size: 1.2rem;
+  color: var(--white);
+  font-size: 1.6rem;
   font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+  mix-blend-mode: difference;
 }
 
 /* Error and No Results States */
