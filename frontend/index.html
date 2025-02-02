@@ -107,16 +107,16 @@
 
       <div class="right-panel">
         <div class="gallery" id="gallery"></div>
-      </div>
-    </div>
-
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loading">
-      <div class="loading-content">
-        <div class="spinner-border mb-3" role="status">
-          <span class="visually-hidden">Loading...</span>
+        <!-- New Gallery Loading Overlay -->
+        <div class="gallery-loading-overlay" id="loading">
+          <div class="gallery-loading-content">
+            <div class="progress-container">
+              <div class="progress-bar" id="searchProgress"></div>
+              <div class="progress-text" id="progressText">0%</div>
+            </div>
+            <p class="status-text" id="statusText">Searching for similar images...</p>
+          </div>
         </div>
-        <p class="mb-0">Searching for similar images...</p>
       </div>
     </div>
 

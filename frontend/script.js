@@ -119,15 +119,63 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
 
-  // Update loading display functions
+  // Update loading display functions with progress simulation
+  let progressInterval;
+  const searchProgress = document.getElementById('searchProgress');
+  const progressText = document.getElementById('progressText');
+  const statusText = document.getElementById('statusText');
+
   function showLoading() {
+    // Reset progress
+    updateProgress(0);
     loading.style.display = 'flex';
     setTimeout(() => loading.classList.add('show'), 10);
+    
+    // Start progress simulation
+    let progress = 0;
+    progressInterval = setInterval(() => {
+      // Simulate progress up to 90%
+      if (progress < 90) {
+        progress += Math.random() * 15;
+        progress = Math.min(progress, 90);
+        updateProgress(progress);
+      }
+    }, 500);
   }
 
   function hideLoading() {
-    loading.classList.remove('show');
-    setTimeout(() => loading.style.display = 'none', 300);
+    // Complete progress animation
+    clearInterval(progressInterval);
+    updateProgress(100);
+    
+    // Hide loading overlay after a short delay
+    setTimeout(() => {
+      loading.classList.remove('show');
+      setTimeout(() => {
+        loading.style.display = 'none';
+        // Reset progress for next time
+        updateProgress(0);
+      }, 300);
+    }, 500);
+  }
+
+  function updateProgress(value) {
+    const progress = Math.min(Math.max(value, 0), 100);
+    searchProgress.style.width = `${progress}%`;
+    progressText.textContent = `${Math.round(progress)}%`;
+    
+    // Update status text based on progress
+    if (progress === 0) {
+      statusText.textContent = 'Initializing search...';
+    } else if (progress < 30) {
+      statusText.textContent = 'Processing query...';
+    } else if (progress < 60) {
+      statusText.textContent = 'Searching for similar images...';
+    } else if (progress < 90) {
+      statusText.textContent = 'Analyzing results...';
+    } else {
+      statusText.textContent = 'Completing search...';
+    }
   }
 
   // Update modal display functions
