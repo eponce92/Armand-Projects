@@ -13,6 +13,9 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 import json
+import torch
+import torch.nn.functional as F
+import clip
 from .clip_utils import load_model, get_image_embedding, search_similar_images
 
 app = FastAPI()
@@ -116,53 +119,114 @@ async def select_image():
 
 @app.post("/search")
 async def search_images(
-    query_path: str = Form(...),
     folder: str = Form(...),
     min_score: float = Form(0.0),
-    batch_size: int = Form(32)
+    batch_size: int = Form(32),
+    search_type: str = Form(...),
+    query_path: str = Form(None),
+    query_text: str = Form(None)
 ):
     try:
+        print(f"Search request - Type: {search_type}, Folder: {folder}")
+        
+        if search_type not in ['image', 'text']:
+            raise HTTPException(status_code=400, detail="Invalid search type")
+        
+        if search_type == 'image' and not query_path:
+            raise HTTPException(status_code=400, detail="Query image path is required for image search")
+        
+        if search_type == 'text' and not query_text:
+            raise HTTPException(status_code=400, detail="Query text is required for text search")
+
         # Get query embedding
-        query_embedding = get_image_embedding(query_path, model, preprocess)
+        try:
+            if search_type == 'image':
+                query_embedding = get_image_embedding(query_path, model, preprocess)
+            else:  # text search
+                print(f"Processing text query: {query_text}")
+                device = next(model.parameters()).device
+                text = clip.tokenize([query_text]).to(device)
+                with torch.no_grad():
+                    query_embedding = model.encode_text(text)
+                    query_embedding = F.normalize(query_embedding.squeeze(0), dim=0).cpu()
+                print("Text embedding generated successfully")
+
+            if query_embedding is None:
+                raise HTTPException(status_code=400, detail="Failed to generate query embedding")
+            
+        except Exception as e:
+            print(f"Error generating embedding: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
+
+        # Process folder path
+        try:
+            folder = os.path.abspath(folder)
+            if not os.path.exists(folder):
+                raise HTTPException(status_code=400, detail=f"Folder not found: {folder}")
+            print(f"Searching in folder: {folder}")
+        except Exception as e:
+            print(f"Error with folder path: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid folder path: {str(e)}")
         
         # Search similar images
-        results = search_similar_images(
-            query_embedding,
-            folder,
-            model,
-            preprocess,
-            min_score=min_score,
-            batch_size=batch_size
-        )
+        try:
+            results = search_similar_images(
+                query_embedding,
+                folder,
+                model,
+                preprocess,
+                min_score=min_score,
+                batch_size=batch_size
+            )
+            print(f"Found {len(results)} results")
+        except Exception as e:
+            print(f"Error during image search: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error during search: {str(e)}")
 
         # Process results
-        processed_results = []
-        for result in results:
-            # Get image dimensions
-            with Image.open(result["path"]) as img:
-                width, height = img.size
-                aspect_ratio = height / width
-            
-            processed_results.append({
-                "path": result["path"],
-                "filename": os.path.basename(result["path"]),
-                "score": result["score"],
-                "description": result["description"],
-                "width": width,
-                "height": height,
-                "aspect_ratio": aspect_ratio
-            })
+        try:
+            processed_results = []
+            for result in results:
+                with Image.open(result["path"]) as img:
+                    width, height = img.size
+                    aspect_ratio = height / width
+                
+                processed_results.append({
+                    "path": result["path"],
+                    "filename": os.path.basename(result["path"]),
+                    "score": result["score"],
+                    "description": result["description"],
+                    "width": width,
+                    "height": height,
+                    "aspect_ratio": aspect_ratio
+                })
+            print("Results processed successfully")
+        except Exception as e:
+            print(f"Error processing results: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing results: {str(e)}")
 
-        # Save settings including results
-        save_last_settings(query_path, folder, processed_results)
+        # Save settings
+        try:
+            save_last_settings(
+                query_path if search_type == 'image' else None,
+                folder,
+                processed_results
+            )
+        except Exception as e:
+            print(f"Error saving settings: {str(e)}")
+            # Don't fail the request if settings save fails
+            pass
 
         return JSONResponse({
-            "query_path": query_path,
+            "query_path": query_path if search_type == 'image' else None,
             "results": processed_results
         })
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Unexpected error in search endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

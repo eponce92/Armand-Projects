@@ -31,14 +31,39 @@
 
         <div class="control-panel">
           <form id="searchForm">
-            <div class="drop-zone mb-4" id="dropZone">
-              <input type="file" id="queryImage" name="queryImage" accept="image/*" hidden>
-              <i class="bi bi-cloud-upload"></i>
-              <p class="mb-0">Drag and drop an image here or click to select</p>
+            <div class="search-type-selector mb-4">
+              <label class="form-label">Search Type</label>
+              <div class="search-type-tabs">
+                <button type="button" class="search-tab active" data-search-type="image">
+                  <i class="bi bi-image me-2"></i>Image Search
+                </button>
+                <button type="button" class="search-tab" data-search-type="text">
+                  <i class="bi bi-text-paragraph me-2"></i>Text Search
+                </button>
+              </div>
             </div>
 
-            <div class="preview-container" id="previewContainer">
-              <img id="imagePreview" src="#" alt="Preview">
+            <div id="imageSearchSection">
+              <div class="drop-zone mb-4" id="dropZone">
+                <input type="file" id="queryImage" name="queryImage" accept="image/*" hidden>
+                <i class="bi bi-cloud-upload"></i>
+                <p class="mb-0">Drag and drop an image here or click to select</p>
+              </div>
+
+              <div class="preview-container" id="previewContainer">
+                <img id="imagePreview" src="#" alt="Preview">
+              </div>
+            </div>
+
+            <div id="textSearchSection" style="display: none;">
+              <div class="mb-4">
+                <label for="searchQuery" class="form-label">Search Query</label>
+                <textarea class="form-control" id="searchQuery" name="searchQuery" 
+                  rows="3" placeholder="Describe what you're looking for..."></textarea>
+                <div class="form-text">
+                  Example: "a sunset over mountains" or "a cat sleeping on a windowsill"
+                </div>
+              </div>
             </div>
 
             <div class="mb-4">

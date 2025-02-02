@@ -16,8 +16,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   const imageModal = document.getElementById('imageModal');
   const modalImage = document.getElementById('modalImage');
   const modalClose = document.getElementById('modalClose');
+  const searchTabs = document.querySelectorAll('.search-tab');
+  const imageSearchSection = document.getElementById('imageSearchSection');
+  const textSearchSection = document.getElementById('textSearchSection');
+  const searchQuery = document.getElementById('searchQuery');
 
   let selectedImagePath = null;
+  let currentSearchType = 'image';
 
   // Load last settings
   try {
@@ -141,23 +146,70 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 300);
   }
 
+  // Handle search type switching
+  searchTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const searchType = tab.dataset.searchType;
+      if (searchType === currentSearchType) return;
+
+      // Update tabs
+      searchTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      // Update search button text
+      const searchButton = form.querySelector('button[type="submit"]');
+      searchButton.innerHTML = searchType === 'image' 
+        ? '<i class="bi bi-search me-2"></i>Search Similar Images'
+        : '<i class="bi bi-search me-2"></i>Search Images by Text';
+
+      // Switch sections with animation
+      if (searchType === 'image') {
+        textSearchSection.classList.add('hidden');
+        setTimeout(() => {
+          textSearchSection.style.display = 'none';
+          imageSearchSection.style.display = 'block';
+          setTimeout(() => imageSearchSection.classList.remove('hidden'), 50);
+        }, 300);
+      } else {
+        imageSearchSection.classList.add('hidden');
+        setTimeout(() => {
+          imageSearchSection.style.display = 'none';
+          textSearchSection.style.display = 'block';
+          setTimeout(() => textSearchSection.classList.remove('hidden'), 50);
+        }, 300);
+      }
+
+      currentSearchType = searchType;
+    });
+  });
+
   // Form submission
   form.addEventListener('submit', async function(e) {
     e.preventDefault();
     gallery.innerHTML = '';
     showLoading();
 
-    if(!selectedImagePath) {
-      alert('Please select a query image!');
-      hideLoading();
-      return;
-    }
-
     const formData = new FormData();
-    formData.append('query_path', selectedImagePath);
     formData.append('folder', folderPath.value);
     formData.append('min_score', minScoreInput.value);
     formData.append('batch_size', batchSize.value);
+    formData.append('search_type', currentSearchType);
+
+    if (currentSearchType === 'image') {
+      if (!selectedImagePath) {
+        hideLoading();
+        alert('Please select a query image!');
+        return;
+      }
+      formData.append('query_path', selectedImagePath);
+    } else {
+      if (!searchQuery.value.trim()) {
+        hideLoading();
+        alert('Please enter a search query!');
+        return;
+      }
+      formData.append('query_text', searchQuery.value.trim());
+    }
 
     try {
       const response = await fetch('/search', {
@@ -166,14 +218,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      displayResults(data.results);
+      if (!data.results || !Array.isArray(data.results)) {
+        throw new Error('Invalid response format from server');
+      }
+      
+      if (data.results.length === 0) {
+        gallery.innerHTML = `
+          <div class="no-results">
+            <i class="bi bi-search" style="font-size: 3rem; opacity: 0.5;"></i>
+            <h3>No matching images found</h3>
+            <p>Try adjusting your search criteria or selecting a different folder.</p>
+          </div>
+        `;
+      } else {
+        displayResults(data.results);
+      }
     } catch (error) {
       console.error('Error fetching search results:', error);
-      alert('Error fetching search results: ' + error.message);
+      gallery.innerHTML = `
+        <div class="search-error">
+          <i class="bi bi-exclamation-triangle" style="font-size: 3rem; color: var(--error-color);"></i>
+          <h3>Error performing search</h3>
+          <p>${error.message}</p>
+          <button class="btn btn-outline-primary mt-3" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>Retry
+          </button>
+        </div>
+      `;
     } finally {
       hideLoading();
     }

@@ -581,3 +581,135 @@ body {
   border-color: var(--primary-color);
   transform: scale(1.02);
 }
+
+/* Search Type Selector */
+.search-type-selector {
+  margin-bottom: 2rem;
+}
+
+.search-type-tabs {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem;
+  background: var(--input-background);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+}
+
+.search-tab {
+  flex: 1;
+  padding: 0.875rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--border-radius) - 4px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.search-tab:hover {
+  background: rgba(0, 102, 255, 0.05);
+  color: var(--primary-color);
+}
+
+.search-tab.active {
+  background: white;
+  color: var(--primary-color);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.search-tab i {
+  font-size: 1.1rem;
+}
+
+/* Text Search Section */
+#textSearchSection {
+  background: var(--card-background);
+  border-radius: var(--border-radius);
+  transition: all 0.3s ease;
+}
+
+#searchQuery {
+  resize: none;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+#searchQuery:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.15);
+}
+
+.form-text {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+/* Smooth transitions for section switching */
+#imageSearchSection,
+#textSearchSection {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#imageSearchSection.hidden,
+#textSearchSection.hidden {
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+
+/* Error and No Results States */
+.search-error,
+.no-results {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--card-background);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-md);
+  max-width: 600px;
+  margin: 2rem auto;
+}
+
+.search-error i,
+.no-results i {
+  display: block;
+  margin-bottom: 1.5rem;
+}
+
+.search-error h3,
+.no-results h3 {
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.search-error p,
+.no-results p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.search-error .btn {
+  margin-top: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 500;
+}
+
+.search-error .btn i {
+  margin: 0 0.5rem 0 0;
+  font-size: 1.1rem;
+  display: inline-block;
+  vertical-align: -2px;
+}
