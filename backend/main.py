@@ -16,7 +16,13 @@ import json
 import torch
 import torch.nn.functional as F
 import clip
-from .clip_utils import load_model, get_image_embedding, search_similar_images
+from .clip_utils import (
+    load_model,
+    get_image_embedding,
+    process_image_batch,
+    tokenize_search_query,
+    async_get_token_similarities
+)
 import uuid
 from collections import defaultdict
 
@@ -177,35 +183,26 @@ async def process_search(
         # Process images in batches
         for i in range(0, len(image_files), batch_size):
             batch_paths = image_files[i:i + batch_size]
-            batch_embeddings = []
-            valid_paths = []
             
-            # Process each image in the batch
-            for img_path in batch_paths:
-                # Add a small delay to prevent blocking
-                await asyncio.sleep(0)
-                
-                embedding = get_image_embedding(img_path, model, preprocess)
-                if embedding is not None:
-                    batch_embeddings.append(embedding)
-                    valid_paths.append(img_path)
-                
-                processed_images += 1
-                progress = int(30 + (processed_images / total_images * 60))
-                search_progress[search_id].update({
-                    'progress': progress,
-                    'status': f'Processing images... ({processed_images}/{total_images})',
-                    'processed': processed_images,
-                    'total': total_images
-                })
+            # Process batch concurrently
+            valid_paths, batch_embeddings = await process_image_batch(batch_paths, model, preprocess)
             
-            if batch_embeddings:
-                # Stack embeddings and calculate similarities
-                batch_embeddings = torch.stack(batch_embeddings)
+            # Update progress after each batch
+            processed_images += len(batch_paths)
+            progress = int(30 + (processed_images / total_images * 60))
+            search_progress[search_id].update({
+                'progress': progress,
+                'status': f'Processing images... ({processed_images}/{total_images})',
+                'processed': processed_images,
+                'total': total_images
+            })
+            
+            if batch_embeddings is not None:
+                # Calculate similarities for the batch
                 similarities = F.cosine_similarity(batch_embeddings, query_embedding.unsqueeze(0))
                 
                 # Process results
-                for path, similarity in zip(valid_paths, similarities):
+                for path, similarity, img_embedding in zip(valid_paths, similarities, batch_embeddings):
                     score = (similarity.item() + 1) / 2
                     
                     if score >= min_score:
@@ -213,23 +210,17 @@ async def process_search(
                         description = ""
                         
                         if search_type == 'text':
-                            # Get individual token similarities
-                            img_embedding = batch_embeddings[valid_paths.index(path)]
-                            token_similarities = []
-                            
-                            tokens = query_text.lower().split()
-                            for token in tokens:
-                                if token not in {'a', 'an', 'the', 'of', 'in', 'on', 'at', 'for', 'to', 'with'}:
-                                    token_text = clip.tokenize([token]).to(device)
-                                    with torch.no_grad():
-                                        token_features = model.encode_text(token_text)
-                                        token_features = F.normalize(token_features.squeeze(0), dim=0)
-                                        token_similarity = torch.dot(img_embedding.to(device), token_features)
-                                        token_score = (token_similarity.item() + 1) / 2
-                                        token_similarities.append((token, token_score))
-                                        token_scores.append(token_score)
+                            # Get individual token similarities concurrently
+                            tokens = tokenize_search_query(query_text)
+                            token_similarities = await async_get_token_similarities(
+                                img_embedding,
+                                tokens,
+                                model,
+                                device
+                            )
                             
                             description = ", ".join([f"{token} ({score:.1%})" for token, score in token_similarities])
+                            token_scores = [score for _, score in token_similarities]
                             
                             if token_scores:
                                 final_score = (score + sum(token_scores) / len(token_scores)) / 2

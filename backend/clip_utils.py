@@ -7,9 +7,14 @@ from pathlib import Path
 from typing import List, Dict, Union, Tuple
 import numpy as np
 import re
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Global cache for image embeddings
 cache = {}
+
+# Global thread pool executor for image processing
+thread_pool = ThreadPoolExecutor(max_workers=4)  # Adjust based on your CPU cores
 
 
 def load_model():
@@ -66,10 +71,10 @@ def analyze_image_content(image_path: str, model: torch.nn.Module, preprocess) -
         return "unknown content"
 
 
-def get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> torch.Tensor:
+def get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> Union[torch.Tensor, None]:
     """Get embedding for a single image"""
     try:
-        image = Image.open(image_path)
+        image = Image.open(image_path).convert('RGB')
         image_input = preprocess(image).unsqueeze(0).to(next(model.parameters()).device)
         with torch.no_grad():
             image_features = model.encode_image(image_input)
@@ -78,6 +83,18 @@ def get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> 
     except Exception as e:
         print(f"Error processing image {image_path}: {str(e)}")
         return None
+
+
+async def async_get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> Union[torch.Tensor, None]:
+    """Asynchronous wrapper for get_image_embedding"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        thread_pool,
+        get_image_embedding,
+        image_path,
+        model,
+        preprocess
+    )
 
 
 def get_cached_embedding(image_path: str, model: torch.nn.Module, preprocess) -> Union[torch.Tensor, None]:
@@ -98,18 +115,31 @@ def get_cached_embedding(image_path: str, model: torch.nn.Module, preprocess) ->
         return None
 
 
-def process_image_batch(image_paths: List[str], model: torch.nn.Module, preprocess) -> tuple:
-    """Process a batch of images and return their embeddings"""
-    batch_embeddings = []
+async def process_image_batch(batch_paths: List[str], model: torch.nn.Module, preprocess) -> Tuple[List[str], torch.Tensor]:
+    """Process a batch of images concurrently"""
+    # Create tasks for all images in the batch
+    embedding_tasks = [
+        async_get_image_embedding(path, model, preprocess)
+        for path in batch_paths
+    ]
+    
+    # Process all embeddings concurrently
+    embeddings = await asyncio.gather(*embedding_tasks)
+    
+    # Filter out failed embeddings and keep track of valid paths
+    valid_embeddings = []
     valid_paths = []
     
-    for path in image_paths:
-        embedding = get_cached_embedding(path, model, preprocess)
+    for path, embedding in zip(batch_paths, embeddings):
         if embedding is not None:
-            batch_embeddings.append(embedding)
+            valid_embeddings.append(embedding)
             valid_paths.append(path)
     
-    return valid_paths, torch.stack(batch_embeddings) if batch_embeddings else None
+    if not valid_embeddings:
+        return [], None
+    
+    # Stack valid embeddings
+    return valid_paths, torch.stack(valid_embeddings)
 
 
 def tokenize_search_query(query: str) -> List[str]:
@@ -153,6 +183,36 @@ def get_token_similarities(image_embedding: torch.Tensor, tokens: List[str], mod
         similarity = torch.dot(image_embedding.to(device), text_features.to(device))
         similarity_score = (similarity.item() + 1) / 2  # Normalize to 0-1 range
         similarities.append((token, similarity_score))
+    
+    # Sort by similarity score in descending order
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities
+
+
+async def async_get_token_similarities(
+    image_embedding: torch.Tensor,
+    tokens: List[str],
+    model: torch.nn.Module,
+    device
+) -> List[Tuple[str, float]]:
+    """Asynchronous function to get token similarities"""
+    similarities = []
+    
+    # Process tokens in parallel
+    async def process_token(token: str) -> Tuple[str, float]:
+        text = clip.tokenize([token]).to(device)
+        with torch.no_grad():
+            text_features = model.encode_text(text)
+            text_features = F.normalize(text_features.squeeze(0), dim=0)
+            similarity = torch.dot(image_embedding.to(device), text_features.to(device))
+            similarity_score = (similarity.item() + 1) / 2
+        return token, similarity_score
+    
+    # Create tasks for all tokens
+    similarity_tasks = [process_token(token) for token in tokens]
+    
+    # Process all similarities concurrently
+    similarities = await asyncio.gather(*similarity_tasks)
     
     # Sort by similarity score in descending order
     similarities.sort(key=lambda x: x[1], reverse=True)
