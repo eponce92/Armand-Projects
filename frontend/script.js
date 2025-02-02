@@ -210,6 +210,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   });
 
+  // Add Enter key handler for search query field
+  searchQuery.addEventListener('keypress', function(e) {
+    // Check if Enter key was pressed and not with modifier keys
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault(); // Prevent default form submission
+      form.dispatchEvent(new Event('submit')); // Trigger form submission
+    }
+  });
+
   // Form submission
   form.addEventListener('submit', async function(e) {
     e.preventDefault();
