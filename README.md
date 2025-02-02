@@ -4,21 +4,48 @@ A modern web application that uses OpenAI's CLIP model to find visually similar 
 
 ## ✨ Features
 
-- 🖼️ Drag-and-drop image upload
-- 📁 Native folder picker integration
-- 🔍 AI-powered visual similarity search
-- 📊 Adjustable similarity threshold
-- 🎯 Batch processing control
-- 🖥️ Modern, responsive UI
-- 🚀 Real-time results with progress indication
+- 🎯 AI-powered visual similarity search using CLIP
+- 🖼️ Modern, responsive gallery with masonry layout
+- 🎨 Professional UI with glass morphism effects
+- 🔄 Real-time image preview and batch processing
+- 📊 Adjustable similarity threshold with visual feedback
+- 🎛️ Customizable batch size for performance
+- 📱 Fully responsive design
+- ⌨️ Keyboard navigation support
+- 🖱️ Drag and drop support
+- 🔍 Image content analysis
+- 💾 Session persistence
+
+## 🎨 UI Features
+
+- Modern glass morphism design
+- Smooth animations and transitions
+- Interactive slider controls
+- Professional color scheme
+- Responsive image gallery
+- Immersive image viewer
+- Loading states and feedback
+- Native folder picker integration
 
 ## 🛠️ Technology Stack
 
-- **Backend**: FastAPI, Python
-- **Frontend**: HTML5, CSS3, JavaScript
-- **AI Model**: OpenAI CLIP
-- **UI Framework**: Bootstrap 5
-- **Layout**: Masonry.js
+### Frontend
+
+- HTML5 & CSS3
+- Modern JavaScript (ES6+)
+- Bootstrap 5
+- Masonry.js for gallery layout
+- IonIcons for icons
+- Custom animations and transitions
+
+### Backend
+
+- FastAPI
+- Python 3.8+
+- OpenAI CLIP model
+- PIL for image processing
+- TorchVision
+- Async processing
 
 ## 🚀 Getting Started
 
@@ -26,6 +53,8 @@ A modern web application that uses OpenAI's CLIP model to find visually similar 
 
 - Python 3.8 or higher
 - pip (Python package manager)
+- Modern web browser
+- CUDA-capable GPU (recommended)
 
 ### Installation
 
@@ -40,8 +69,10 @@ A modern web application that uses OpenAI's CLIP model to find visually similar 
 
    ```bash
    python -m venv venv
+
    # On Windows:
    .\venv\Scripts\activate
+
    # On Unix or MacOS:
    source venv/bin/activate
    ```
@@ -64,28 +95,43 @@ A modern web application that uses OpenAI's CLIP model to find visually similar 
    http://localhost:8000
    ```
 
-## 🎯 Usage
+## 💡 Usage
 
-1. Click or drag an image into the upload area
-2. Use the "Browse" button to select a folder to search in
-3. Adjust the minimum similarity score if needed
-4. Choose a batch size based on your system's capabilities
-5. Click "Search Similar Images" to start the search
-6. Click on any result to view it in full size
+1. **Select Query Image**
 
-## 📁 Project Structure
+   - Click or drag an image to the upload area
+   - Preview appears automatically
+
+2. **Choose Search Location**
+
+   - Use the "Browse" button to select a folder
+   - All supported image formats will be searched
+
+3. **Adjust Settings**
+
+   - Set minimum similarity score (0.0 - 1.0)
+   - Choose batch size based on your hardware
+   - Larger batch sizes are faster but use more memory
+
+4. **View Results**
+   - Results appear in a responsive gallery
+   - Sorted by similarity score
+   - Click any image for full-screen view
+   - Use arrow keys to navigate in full-screen mode
+
+## 🗂️ Project Structure
 
 ```
 clip-image-search/
 ├── backend/
 │   ├── __init__.py
-│   ├── main.py
-│   └── clip_utils.py
+│   ├── main.py           # FastAPI application
+│   └── clip_utils.py     # CLIP model utilities
 ├── frontend/
-│   ├── index.html
-│   └── script.js
-├── temp/
-│   └── thumbnails/
+│   ├── components/       # Modular UI components
+│   ├── index.html       # Main HTML
+│   ├── script.js        # Main JavaScript
+│   └── styles.css       # Main styles
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -93,9 +139,18 @@ clip-image-search/
 
 ## ⚙️ Configuration
 
-- Adjust batch size in the UI based on your system's memory
-- Minimum similarity score can be set between 0 and 1
-- Temporary files are stored in the `temp` directory
+The application can be configured through several parameters:
+
+- **Batch Size**:
+
+  - Small (16 images)
+  - Medium (32 images) - default
+  - Large (64 images)
+
+- **Similarity Score**:
+  - Range: 0.0 to 1.0
+  - Default: 0.2
+  - Higher values = stricter matching
 
 ## 🤝 Contributing
 
@@ -107,11 +162,12 @@ clip-image-search/
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
 - OpenAI for the CLIP model
-- FastAPI team for the amazing framework
-- Bootstrap team for the UI framework
-- David DeSandro for Masonry.js
+- FastAPI team
+- Bootstrap team
+- Masonry.js contributors
+- IonIcons team
