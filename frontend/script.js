@@ -1,3 +1,5 @@
+import imageSlider from './components/image-slider.js';
+
 document.addEventListener('DOMContentLoaded', async function() {
   const form = document.getElementById('searchForm');
   const dropZone = document.getElementById('dropZone');
@@ -233,12 +235,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       imageContainer.appendChild(img);
       item.appendChild(imageContainer);
       item.appendChild(details);
-      gallery.appendChild(item);
 
-      // Add click handler to view full image
+      // Add click handler to view in slider
       item.addEventListener('click', () => {
-        showModal(result.path);
+        imageSlider.loadImages(results);
+        imageSlider.show(index);
       });
+
+      gallery.appendChild(item);
     });
   }
 
