@@ -12,7 +12,7 @@ from typing import List, Dict
 import time
 import tkinter as tk
 from tkinter import filedialog
-
+import json
 from .clip_utils import load_model, get_image_embedding, search_similar_images
 
 app = FastAPI()
@@ -29,101 +29,101 @@ app.add_middleware(
 # Load model globally
 model, preprocess = load_model()
 
-# Create necessary directories
-os.makedirs("temp", exist_ok=True)
-os.makedirs("temp/thumbnails", exist_ok=True)
+# Settings file path
+SETTINGS_FILE = "settings.json"
 
-# Mount static directories
-app.mount("/static", StaticFiles(directory="temp"), name="static")
-app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
+# Get project root directory
+ROOT_DIR = Path(__file__).parent.parent
 
-def create_thumbnail(image_path: str, max_size: int = 800) -> str:
-    """Create a high-quality thumbnail for an image and return its path"""
+# Mount frontend directory
+app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "frontend")), name="static")
+
+def save_last_settings(query_path: str, folder_path: str, results=None):
+    """Save the last used image, folder paths and results"""
+    settings = {
+        "last_query": query_path,
+        "last_folder": folder_path,
+        "last_results": results if results else [],
+        "timestamp": time.time()
+    }
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f)
+
+def get_last_settings() -> Dict:
+    """Get the last used settings"""
     try:
-        thumb_path = os.path.join("temp/thumbnails", f"thumb_{os.path.basename(image_path)}")
-        if os.path.exists(thumb_path):
-            return thumb_path
-
-        with Image.open(image_path) as img:
-            # Convert to RGB if necessary
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGB')
-            
-            # Calculate aspect ratio
-            aspect = img.width / img.height
-            if aspect > 1:
-                new_width = max_size
-                new_height = int(max_size / aspect)
-            else:
-                new_height = max_size
-                new_width = int(max_size * aspect)
-            
-            # High quality resize
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            img.save(thumb_path, "JPEG", quality=85, optimize=True)
-        return thumb_path
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
     except Exception as e:
-        print(f"Error creating thumbnail for {image_path}: {str(e)}")
-        return image_path
+        print(f"Error reading settings: {e}")
+    return {"last_query": None, "last_folder": None, "timestamp": None}
 
 @app.get("/")
 async def read_root():
-    return FileResponse("frontend/index.html")
+    return FileResponse(str(ROOT_DIR / "frontend/index.html"))
 
-@app.get("/list-folder")
-async def list_folder(folder_path: str) -> Dict:
-    """List all images in a folder"""
+@app.get("/last-settings")
+async def get_settings():
+    """Get the last used settings"""
+    return get_last_settings()
+
+@app.get("/image/{path:path}")
+async def get_image(path: str):
+    """Serve image files safely"""
     try:
-        image_files = []
-        for ext in ['.jpg', '.jpeg', '.png', '.gif']:
-            image_files.extend(Path(folder_path).glob(f'**/*{ext}'))
-        return {"files": [str(f) for f in image_files]}
+        return FileResponse(path)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=404, detail="Image not found")
 
-@app.get("/select-folder")
-async def select_folder():
-    """Open native folder selection dialog and return the selected path"""
+@app.post("/select-image")
+async def select_image():
+    """Open native file selection dialog and return the selected file's info"""
     try:
-        # Create a new root window for each dialog
         root = tk.Tk()
-        root.withdraw()  # Hide the main window
-        root.attributes('-topmost', True)  # Make sure dialog stays on top
+        root.withdraw()
+        root.attributes('-topmost', True)
         
-        folder_path = filedialog.askdirectory(
+        file_path = filedialog.askopenfilename(
             parent=root,
-            title='Select Folder with Images',
-            initialdir=os.path.expanduser("~")  # Start from user's home directory
+            title='Select Image File',
+            initialdir=os.path.expanduser("~"),
+            filetypes=[('Image files', '*.jpg *.jpeg *.png *.gif')]
         )
         
-        root.destroy()  # Clean up the window
+        root.destroy()
         
-        if folder_path:
-            return {"folder_path": folder_path}
-        else:
-            return {"folder_path": None}
+        if file_path:
+            folder_path = str(Path(file_path).parent)
+            save_last_settings(file_path, folder_path)
+            
+            # Get image dimensions for proper sizing
+            with Image.open(file_path) as img:
+                width, height = img.size
+                aspect_ratio = height / width
+            
+            return {
+                "file_path": file_path,
+                "folder_path": folder_path,
+                "filename": os.path.basename(file_path),
+                "width": width,
+                "height": height,
+                "aspect_ratio": aspect_ratio
+            }
+        return {"file_path": None, "folder_path": None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/search")
 async def search_images(
-    query: UploadFile = File(...),
+    query_path: str = Form(...),
     folder: str = Form(...),
     min_score: float = Form(0.0),
     batch_size: int = Form(32)
 ):
     try:
-        # Save query image
-        file_location = f"temp/{query.filename}"
-        with open(file_location, "wb") as f:
-            content = await query.read()
-            f.write(content)
-
-        # Create thumbnail for query image
-        query_thumb = create_thumbnail(file_location)
-        
         # Get query embedding
-        query_embedding = get_image_embedding(file_location, model, preprocess)
+        query_embedding = get_image_embedding(query_path, model, preprocess)
         
         # Search similar images
         results = search_similar_images(
@@ -135,18 +135,29 @@ async def search_images(
             batch_size=batch_size
         )
 
-        # Process results to include thumbnails
+        # Process results
         processed_results = []
         for result in results:
-            thumb_path = create_thumbnail(result["path"])
+            # Get image dimensions
+            with Image.open(result["path"]) as img:
+                width, height = img.size
+                aspect_ratio = height / width
+            
             processed_results.append({
                 "path": result["path"],
-                "thumbnail": f"/static/thumbnails/thumb_{os.path.basename(result['path'])}",
-                "score": result["score"]
+                "filename": os.path.basename(result["path"]),
+                "score": result["score"],
+                "description": result["description"],
+                "width": width,
+                "height": height,
+                "aspect_ratio": aspect_ratio
             })
 
+        # Save settings including results
+        save_last_settings(query_path, folder, processed_results)
+
         return JSONResponse({
-            "query_thumbnail": f"/static/thumbnails/thumb_{query.filename}",
+            "query_path": query_path,
             "results": processed_results
         })
 

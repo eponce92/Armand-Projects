@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   const form = document.getElementById('searchForm');
   const dropZone = document.getElementById('dropZone');
   const queryImage = document.getElementById('queryImage');
@@ -6,45 +6,56 @@ document.addEventListener('DOMContentLoaded', function() {
   const imagePreview = document.getElementById('imagePreview');
   const loading = document.getElementById('loading');
   const gallery = document.getElementById('gallery');
-  const progress = document.querySelector('.progress');
-  const progressBar = progress.querySelector('.progress-bar');
   const minScoreInput = document.getElementById('minScore');
   const minScoreValue = document.getElementById('minScoreValue');
   const batchSize = document.getElementById('batchSize');
-  const folderInput = document.getElementById('folderInput');
   const browseFolderBtn = document.getElementById('browseFolderBtn');
+  const folderPath = document.getElementById('folderPath');
   const imageModal = document.getElementById('imageModal');
   const modalImage = document.getElementById('modalImage');
   const modalClose = document.getElementById('modalClose');
 
-  // Initialize Masonry with proper options
-  let msnry = new Masonry(gallery, {
-    itemSelector: '.gallery-item',
-    columnWidth: '.gallery-item',
-    percentPosition: true,
-    gutter: 24,
-    transitionDuration: '0.3s',
-    initLayout: true,
-    fitWidth: false
-  });
+  let selectedImagePath = null;
+
+  // Load last settings
+  try {
+    const response = await fetch('/last-settings');
+    const settings = await response.json();
+    if (settings && settings.last_folder) {
+      folderPath.value = settings.last_folder;
+    }
+    if (settings && settings.last_query) {
+      selectedImagePath = settings.last_query;
+      imagePreview.src = `/image/${encodeURIComponent(settings.last_query)}`;
+      previewContainer.style.display = 'block';
+    }
+    // Display last results if available
+    if (settings && settings.last_results && settings.last_results.length > 0) {
+      displayResults(settings.last_results);
+    }
+  } catch (error) {
+    console.error('Error loading last settings:', error);
+  }
 
   // Drag and drop handlers
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, preventDefaults, false);
-  });
+  if (dropZone) {
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, unhighlight, false);
+    });
+  }
 
   function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();
   }
-
-  ['dragenter', 'dragover'].forEach(eventName => {
-    dropZone.addEventListener(eventName, highlight, false);
-  });
-
-  ['dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, unhighlight, false);
-  });
 
   function highlight() {
     dropZone.classList.add('dragover');
@@ -54,32 +65,30 @@ document.addEventListener('DOMContentLoaded', function() {
     dropZone.classList.remove('dragover');
   }
 
-  // Handle dropped files
+  // Click to select file
+  dropZone.addEventListener('click', async () => {
+    try {
+      const response = await fetch('/select-image', {
+        method: 'POST'
+      });
+      const data = await response.json();
+      
+      if (data.file_path) {
+        selectedImagePath = data.file_path;
+        folderPath.value = data.folder_path;
+        imagePreview.src = `/image/${encodeURIComponent(data.file_path)}`;
+        previewContainer.style.display = 'block';
+      }
+    } catch (error) {
+      console.error('Error selecting image:', error);
+    }
+  });
+
+  // Handle dropped files (optional, might not work with local files due to security)
   dropZone.addEventListener('drop', handleDrop, false);
   function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    queryImage.files = files;
-    handleFiles(files);
-  }
-
-  // Click to select file
-  dropZone.addEventListener('click', () => queryImage.click());
-  queryImage.addEventListener('change', () => handleFiles(queryImage.files));
-
-  // Handle selected files
-  function handleFiles(files) {
-    if (files.length > 0) {
-      const file = files[0];
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          imagePreview.src = e.target.result;
-          previewContainer.style.display = 'block';
-        }
-        reader.readAsDataURL(file);
-      }
-    }
+    alert('Please use the click to select method for choosing images.');
+    // Drag and drop won't work with local files due to security restrictions
   }
 
   // Update min score display with badge
@@ -90,10 +99,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // Folder selection handling
   browseFolderBtn.addEventListener('click', async () => {
     try {
-      const response = await fetch('/select-folder');
+      const response = await fetch('/select-image', {
+        method: 'POST'
+      });
       const data = await response.json();
       if (data.folder_path) {
-        document.getElementById('folderPath').value = data.folder_path;
+        folderPath.value = data.folder_path;
       }
     } catch (error) {
       console.error('Error selecting folder:', error);
@@ -101,24 +112,48 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  // Update loading display functions
+  function showLoading() {
+    loading.style.display = 'flex';
+    setTimeout(() => loading.classList.add('show'), 10);
+  }
+
+  function hideLoading() {
+    loading.classList.remove('show');
+    setTimeout(() => loading.style.display = 'none', 300);
+  }
+
+  // Update modal display functions
+  function showModal(imagePath) {
+    modalImage.src = `/image/${encodeURIComponent(imagePath)}`;
+    imageModal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => imageModal.classList.add('show'), 10);
+  }
+
+  function closeModal() {
+    imageModal.classList.remove('show');
+    setTimeout(() => {
+      imageModal.style.display = 'none';
+      document.body.style.overflow = '';
+    }, 300);
+  }
+
   // Form submission
   form.addEventListener('submit', async function(e) {
     e.preventDefault();
     gallery.innerHTML = '';
-    loading.style.display = 'flex';  // Changed to flex for centering
+    showLoading();
 
-    const queryImageInput = document.getElementById('queryImage');
-    const folderPathInput = document.getElementById('folderPath');
-
-    if(queryImageInput.files.length === 0) {
+    if(!selectedImagePath) {
       alert('Please select a query image!');
-      loading.style.display = 'none';
+      hideLoading();
       return;
     }
 
     const formData = new FormData();
-    formData.append('query', queryImageInput.files[0]);
-    formData.append('folder', folderPathInput.value);
+    formData.append('query_path', selectedImagePath);
+    formData.append('folder', folderPath.value);
     formData.append('min_score', minScoreInput.value);
     formData.append('batch_size', batchSize.value);
 
@@ -138,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('Error fetching search results:', error);
       alert('Error fetching search results: ' + error.message);
     } finally {
-      loading.style.display = 'none';
+      hideLoading();
     }
   });
 
@@ -154,39 +189,57 @@ document.addEventListener('DOMContentLoaded', function() {
       const item = document.createElement('div');
       item.className = 'gallery-item';
       
-      const card = document.createElement('div');
-      card.className = 'position-relative';
+      // Determine size and aspect ratio classes
+      const aspectRatio = result.height / result.width;
+      
+      // Add aspect ratio class first - simplified for better space usage
+      if (aspectRatio > 1.3) {  // Very tall images
+        item.classList.add('gallery-item--portrait');
+      } else if (aspectRatio < 0.5) {  // Very wide images
+        item.classList.add('gallery-item--panorama');
+      } else if (aspectRatio < 0.7) {  // Moderately wide images
+        item.classList.add('gallery-item--landscape');
+      }
+      
+      // Add size class based on score - simplified
+      if (result.score > 0.9) {
+        item.classList.add('gallery-item--full');
+      } else if (result.score > 0.8 && aspectRatio > 1.2) {
+        item.classList.add('gallery-item--large');
+      }
+      
+      const imageContainer = document.createElement('div');
+      imageContainer.className = 'image-container';
       
       const img = document.createElement('img');
-      img.src = result.thumbnail;
-      img.className = 'img-fluid';
-      img.alt = `Similar image ${index + 1}`;
+      img.src = `/image/${encodeURIComponent(result.path)}`;
+      img.alt = result.filename;
       img.loading = 'lazy';
       
-      const score = document.createElement('div');
-      score.className = 'score-badge';
-      score.textContent = `${(result.score * 100).toFixed(1)}%`;
+      const details = document.createElement('div');
+      details.className = 'item__details';
+      details.innerHTML = `
+        <div class="details-content">
+          <div class="details-header">
+            <span class="match-number" title="${result.filename}">${result.filename}</span>
+            <span class="match-score">${(result.score * 100).toFixed(1)}%</span>
+          </div>
+          <div class="match-description" title="${result.description}">
+            ${result.description}
+          </div>
+        </div>
+      `;
       
-      card.appendChild(img);
-      card.appendChild(score);
-      item.appendChild(card);
+      imageContainer.appendChild(img);
+      item.appendChild(imageContainer);
+      item.appendChild(details);
       gallery.appendChild(item);
 
       // Add click handler to view full image
-      card.addEventListener('click', () => {
-        modalImage.src = result.path;
-        imageModal.style.display = 'block';
-        document.body.style.overflow = 'hidden';  // Prevent scrolling when modal is open
+      item.addEventListener('click', () => {
+        showModal(result.path);
       });
-      
-      // Update masonry layout when image loads
-      img.onload = () => {
-        msnry.layout();
-      };
     });
-
-    // Initialize layout after all images are added
-    msnry.layout();
   }
 
   // Modal handling
@@ -203,19 +256,5 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.key === 'Escape' && imageModal.style.display === 'block') {
       closeModal();
     }
-  });
-
-  function closeModal() {
-    imageModal.style.display = 'none';
-    document.body.style.overflow = '';  // Restore scrolling
-  }
-
-  // Handle window resize for masonry layout
-  let resizeTimeout;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      msnry.layout();
-    }, 100);
   });
 }); 

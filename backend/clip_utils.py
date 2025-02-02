@@ -19,6 +19,52 @@ def load_model():
     return model, preprocess
 
 
+def analyze_image_content(image_path: str, model: torch.nn.Module, preprocess) -> str:
+    """Analyze image content using CLIP"""
+    try:
+        device = next(model.parameters()).device
+        image = Image.open(image_path).convert("RGB")
+        image_input = preprocess(image).unsqueeze(0).to(device)
+        
+        # Categories for image analysis
+        categories = [
+            "a photograph", "digital art", "a painting", "a sketch",
+            "landscape photo", "portrait photo", "abstract art", "still life",
+            "black and white", "colorful", "high contrast", "soft lighting",
+            "nature scene", "urban scene", "indoor scene", "outdoor scene",
+            "close-up shot", "wide angle shot", "aerial view", "macro photography",
+            "night scene", "daylight scene", "sunset scene", "sunrise scene",
+            "architecture", "people", "animals", "plants",
+            "water", "mountains", "sky", "buildings",
+            "vintage style", "modern style", "minimalist", "detailed",
+            "texture", "pattern", "symmetrical", "asymmetrical"
+        ]
+        
+        text = clip.tokenize(categories).to(device)
+        
+        with torch.no_grad():
+            image_features = model.encode_image(image_input)
+            text_features = model.encode_text(text)
+            
+            # Calculate similarities
+            similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
+            
+            # Get top 5 matches
+            values, indices = similarity[0].topk(5)
+            
+            # Create description
+            descriptions = [categories[idx] for idx in indices]
+            scores = [float(val) for val in values]
+            
+            # Format top matches with confidence scores
+            formatted_desc = [f"{desc} ({score:.1f}%)" for desc, score in zip(descriptions, scores)]
+            return ", ".join(formatted_desc)
+            
+    except Exception as e:
+        print(f"Error analyzing image {image_path}: {str(e)}")
+        return "unknown content"
+
+
 def get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> torch.Tensor:
     """Compute embedding for a single image with error handling"""
     try:
@@ -53,7 +99,7 @@ def get_cached_embedding(image_path: str, model: torch.nn.Module, preprocess) ->
         return None
 
 
-def process_image_batch(image_paths: List[str], model: torch.nn.Module, preprocess) -> List[Dict]:
+def process_image_batch(image_paths: List[str], model: torch.nn.Module, preprocess) -> tuple:
     """Process a batch of images and return their embeddings"""
     batch_embeddings = []
     valid_paths = []
@@ -67,14 +113,7 @@ def process_image_batch(image_paths: List[str], model: torch.nn.Module, preproce
     return valid_paths, torch.stack(batch_embeddings) if batch_embeddings else None
 
 
-def search_similar_images(
-    query_embedding: torch.Tensor,
-    folder: str,
-    model: torch.nn.Module,
-    preprocess,
-    min_score: float = 0.0,
-    batch_size: int = 32
-) -> List[Dict]:
+def search_similar_images(query_embedding: torch.Tensor, folder: str, model: torch.nn.Module, preprocess, min_score: float = 0.0, batch_size: int = 32) -> List[Dict]:
     """Search for similar images in folder and return results sorted by cosine similarity"""
     # Ensure query_embedding is normalized
     query_embedding = F.normalize(query_embedding, dim=0)
@@ -99,7 +138,13 @@ def search_similar_images(
             for path, similarity in zip(valid_paths, similarities):
                 score = similarity.item()
                 if score >= min_score:
-                    results.append({"path": path, "score": score})
+                    # Get image content analysis
+                    description = analyze_image_content(path, model, preprocess)
+                    results.append({
+                        "path": path,
+                        "score": score,
+                        "description": description
+                    })
     
     # Sort results by similarity (descending)
     results.sort(key=lambda x: x["score"], reverse=True)
