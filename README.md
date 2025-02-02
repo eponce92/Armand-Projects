@@ -95,6 +95,61 @@ A modern web application that uses OpenAI's CLIP model to find visually similar 
    http://localhost:8000
    ```
 
+## 🚀 Running Options
+
+### Quick Start (Development)
+
+1. **First-time Setup**
+
+   - Double-click `setup.bat`
+   - Wait for the installation to complete
+   - This will create a virtual environment and install all required dependencies
+
+2. **Running the Application**
+   - Double-click `run.bat`
+   - Open your web browser and go to http://localhost:8000
+   - The server will automatically reload when you make changes to the code
+
+### Run on System Startup (Production)
+
+1. **Register as Startup Service**
+
+   - Run `register_startup.bat` as administrator
+   - The application will now start automatically when Windows boots
+   - The service runs silently in the background
+   - Access the application at http://localhost:8000
+
+2. **Service Features**
+
+   - Runs without console window
+   - Automatic startup with Windows
+   - Log files in the application directory (format: service_log_YYYYMMDD_HHMM.txt)
+   - Production-mode server (no auto-reload)
+
+3. **Remove from Startup**
+   - Press Win+R
+   - Type 'shell:startup'
+   - Delete 'CLIP_Image_Search.lnk'
+
+### Manual Setup (Alternative)
+
+If you prefer not to use the batch files:
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+pip install git+https://github.com/openai/CLIP.git
+
+# Run the application
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 ## 💡 Usage
 
 1. **Select Query Image**
@@ -171,3 +226,38 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Bootstrap team
 - Masonry.js contributors
 - IonIcons team
+
+## Requirements
+
+- Python 3.8 or higher
+- Windows OS
+- Internet connection (for initial setup)
+
+## Features
+
+- Image-to-Image similarity search
+- Text-to-Image search using natural language
+- Real-time progress updates
+- Concurrent batch processing
+- Modern, responsive UI
+- Drag-and-drop interface
+- Adjustable similarity threshold
+- Image gallery with detailed view
+
+## Batch Processing Settings
+
+The application uses batch processing to handle large image collections efficiently:
+
+- Default batch size: 32 images
+- Thread pool workers: 4 (adjustable in backend/clip_utils.py)
+- Progress updates for each processed batch
+- Automatic cleanup of search progress after 5 minutes
+
+## Troubleshooting
+
+If you encounter any issues:
+
+1. Make sure Python 3.8 or higher is installed and added to PATH
+2. Try running setup.bat again
+3. Check the console output for any error messages
+4. Make sure no other application is using port 8000
