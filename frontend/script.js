@@ -119,62 +119,41 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
 
-  // Update loading display functions with progress simulation
-  let progressInterval;
+  // Update loading display functions
+  let eventSource;
   const searchProgress = document.getElementById('searchProgress');
   const progressText = document.getElementById('progressText');
   const statusText = document.getElementById('statusText');
 
   function showLoading() {
     // Reset progress
-    updateProgress(0);
+    updateProgress(0, 'Initializing search...');
     loading.style.display = 'flex';
     setTimeout(() => loading.classList.add('show'), 10);
-    
-    // Start progress simulation
-    let progress = 0;
-    progressInterval = setInterval(() => {
-      // Simulate progress up to 90%
-      if (progress < 90) {
-        progress += Math.random() * 15;
-        progress = Math.min(progress, 90);
-        updateProgress(progress);
-      }
-    }, 500);
   }
 
   function hideLoading() {
-    // Complete progress animation
-    clearInterval(progressInterval);
-    updateProgress(100);
+    // Close SSE connection if open
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
     
-    // Hide loading overlay after a short delay
+    // Hide loading overlay
+    loading.classList.remove('show');
     setTimeout(() => {
-      loading.classList.remove('show');
-      setTimeout(() => {
-        loading.style.display = 'none';
-        // Reset progress for next time
-        updateProgress(0);
-      }, 300);
-    }, 500);
+      loading.style.display = 'none';
+      // Reset progress for next time
+      updateProgress(0, '');
+    }, 300);
   }
 
-  function updateProgress(value) {
+  function updateProgress(value, status) {
     const progress = Math.min(Math.max(value, 0), 100);
     searchProgress.style.width = `${progress}%`;
     progressText.textContent = `${Math.round(progress)}%`;
-    
-    // Update status text based on progress
-    if (progress === 0) {
-      statusText.textContent = 'Initializing search...';
-    } else if (progress < 30) {
-      statusText.textContent = 'Processing query...';
-    } else if (progress < 60) {
-      statusText.textContent = 'Searching for similar images...';
-    } else if (progress < 90) {
-      statusText.textContent = 'Analyzing results...';
-    } else {
-      statusText.textContent = 'Completing search...';
+    if (status) {
+      statusText.textContent = status;
     }
   }
 
@@ -260,6 +239,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     try {
+      // Start search request
       const response = await fetch('/search', {
         method: 'POST',
         body: formData
@@ -270,22 +250,54 @@ document.addEventListener('DOMContentLoaded', async function() {
         throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
       }
       
-      const data = await response.json();
-      if (!data.results || !Array.isArray(data.results)) {
-        throw new Error('Invalid response format from server');
+      const { search_id } = await response.json();
+      
+      // Close any existing SSE connection
+      if (eventSource) {
+        eventSource.close();
       }
       
-      if (data.results.length === 0) {
-        gallery.innerHTML = `
-          <div class="no-results">
-            <i class="bi bi-search" style="font-size: 3rem; opacity: 0.5;"></i>
-            <h3>No matching images found</h3>
-            <p>Try adjusting your search criteria or selecting a different folder.</p>
-          </div>
-        `;
-      } else {
-        displayResults(data.results);
-      }
+      // Connect to SSE endpoint for progress updates
+      eventSource = new EventSource(`/search-progress/${search_id}`);
+      
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        switch (data.type) {
+          case 'progress':
+            updateProgress(data.progress, data.status);
+            break;
+            
+          case 'complete':
+            // Display results
+            if (!data.results || !Array.isArray(data.results)) {
+              throw new Error('Invalid response format from server');
+            }
+            
+            if (data.results.length === 0) {
+              gallery.innerHTML = `
+                <div class="no-results">
+                  <i class="bi bi-search" style="font-size: 3rem; opacity: 0.5;"></i>
+                  <h3>No matching images found</h3>
+                  <p>Try adjusting your search criteria or selecting a different folder.</p>
+                </div>
+              `;
+            } else {
+              displayResults(data.results);
+            }
+            hideLoading();
+            break;
+            
+          case 'error':
+            throw new Error(data.message);
+        }
+      };
+      
+      eventSource.onerror = () => {
+        eventSource.close();
+        throw new Error('Lost connection to server');
+      };
+      
     } catch (error) {
       console.error('Error fetching search results:', error);
       gallery.innerHTML = `
@@ -298,7 +310,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           </button>
         </div>
       `;
-    } finally {
       hideLoading();
     }
   });

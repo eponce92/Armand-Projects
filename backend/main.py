@@ -1,5 +1,5 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, BackgroundTasks
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -17,8 +17,13 @@ import torch
 import torch.nn.functional as F
 import clip
 from .clip_utils import load_model, get_image_embedding, search_similar_images
+import uuid
+from collections import defaultdict
 
 app = FastAPI()
+
+# Store search progress
+search_progress = defaultdict(dict)
 
 # CORS middleware
 app.add_middleware(
@@ -117,8 +122,162 @@ async def select_image():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def search_progress_generator(search_id: str):
+    """Generate SSE events for search progress"""
+    while True:
+        if search_id in search_progress:
+            progress = search_progress[search_id]
+            if 'error' in progress:
+                yield f"data: {json.dumps({'type': 'error', 'message': progress['error']})}\n\n"
+                break
+            elif 'done' in progress:
+                yield f"data: {json.dumps({'type': 'complete', 'results': progress['results']})}\n\n"
+                break
+            else:
+                yield f"data: {json.dumps({'type': 'progress', **progress})}\n\n"
+        await asyncio.sleep(0.1)  # Check progress every 100ms
+
+@app.get("/search-progress/{search_id}")
+async def get_search_progress(search_id: str):
+    """SSE endpoint for search progress updates"""
+    return StreamingResponse(
+        search_progress_generator(search_id),
+        media_type="text/event-stream"
+    )
+
+async def process_search(
+    search_id: str,
+    folder: str,
+    query_embedding: torch.Tensor,
+    model,
+    preprocess,
+    min_score: float,
+    batch_size: int,
+    search_type: str,
+    query_text: str = None,
+    device = None
+):
+    """Asynchronous function to process search request"""
+    try:
+        results = []
+        supported_formats = {'.jpg', '.jpeg', '.png', '.gif'}
+        
+        # Get total number of images first
+        search_progress[search_id].update({'progress': 20, 'status': 'Scanning folder...'})
+        image_files = []
+        for root, _, files in os.walk(folder):
+            image_files.extend([
+                os.path.join(root, f) for f in files
+                if os.path.splitext(f)[1].lower() in supported_formats
+            ])
+        
+        total_images = len(image_files)
+        processed_images = 0
+        
+        # Process images in batches
+        for i in range(0, len(image_files), batch_size):
+            batch_paths = image_files[i:i + batch_size]
+            batch_embeddings = []
+            valid_paths = []
+            
+            # Process each image in the batch
+            for img_path in batch_paths:
+                # Add a small delay to prevent blocking
+                await asyncio.sleep(0)
+                
+                embedding = get_image_embedding(img_path, model, preprocess)
+                if embedding is not None:
+                    batch_embeddings.append(embedding)
+                    valid_paths.append(img_path)
+                
+                processed_images += 1
+                progress = int(30 + (processed_images / total_images * 60))
+                search_progress[search_id].update({
+                    'progress': progress,
+                    'status': f'Processing images... ({processed_images}/{total_images})',
+                    'processed': processed_images,
+                    'total': total_images
+                })
+            
+            if batch_embeddings:
+                # Stack embeddings and calculate similarities
+                batch_embeddings = torch.stack(batch_embeddings)
+                similarities = F.cosine_similarity(batch_embeddings, query_embedding.unsqueeze(0))
+                
+                # Process results
+                for path, similarity in zip(valid_paths, similarities):
+                    score = (similarity.item() + 1) / 2
+                    
+                    if score >= min_score:
+                        token_scores = []
+                        description = ""
+                        
+                        if search_type == 'text':
+                            # Get individual token similarities
+                            img_embedding = batch_embeddings[valid_paths.index(path)]
+                            token_similarities = []
+                            
+                            tokens = query_text.lower().split()
+                            for token in tokens:
+                                if token not in {'a', 'an', 'the', 'of', 'in', 'on', 'at', 'for', 'to', 'with'}:
+                                    token_text = clip.tokenize([token]).to(device)
+                                    with torch.no_grad():
+                                        token_features = model.encode_text(token_text)
+                                        token_features = F.normalize(token_features.squeeze(0), dim=0)
+                                        token_similarity = torch.dot(img_embedding.to(device), token_features)
+                                        token_score = (token_similarity.item() + 1) / 2
+                                        token_similarities.append((token, token_score))
+                                        token_scores.append(token_score)
+                            
+                            description = ", ".join([f"{token} ({score:.1%})" for token, score in token_similarities])
+                            
+                            if token_scores:
+                                final_score = (score + sum(token_scores) / len(token_scores)) / 2
+                            else:
+                                final_score = score
+                        else:
+                            final_score = score
+                            description = "Processing..."
+                        
+                        with Image.open(path) as img:
+                            width, height = img.size
+                            aspect_ratio = height / width
+                        
+                        results.append({
+                            "path": path,
+                            "filename": os.path.basename(path),
+                            "score": final_score,
+                            "description": description,
+                            "width": width,
+                            "height": height,
+                            "aspect_ratio": aspect_ratio
+                        })
+        
+        # Sort results by similarity score
+        results.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Update progress with completion
+        search_progress[search_id].update({
+            'progress': 100,
+            'status': 'Search complete!',
+            'done': True,
+            'results': results
+        })
+        
+        # Save settings
+        save_last_settings(
+            None if search_type == 'text' else query_path,
+            folder,
+            results
+        )
+        
+    except Exception as e:
+        print(f"Error in background search task: {str(e)}")
+        search_progress[search_id]['error'] = f"Error during search: {str(e)}"
+
 @app.post("/search")
 async def search_images(
+    background_tasks: BackgroundTasks,
     folder: str = Form(...),
     min_score: float = Form(0.0),
     batch_size: int = Form(32),
@@ -126,6 +285,9 @@ async def search_images(
     query_path: str = Form(None),
     query_text: str = Form(None)
 ):
+    search_id = str(uuid.uuid4())
+    search_progress[search_id] = {'progress': 0, 'status': 'Initializing search...'}
+    
     try:
         print(f"Search request - Type: {search_type}, Folder: {folder}")
         
@@ -139,12 +301,13 @@ async def search_images(
             raise HTTPException(status_code=400, detail="Query text is required for text search")
 
         # Get query embedding
+        search_progress[search_id].update({'progress': 10, 'status': 'Processing query...'})
         try:
+            device = next(model.parameters()).device
             if search_type == 'image':
                 query_embedding = get_image_embedding(query_path, model, preprocess)
             else:  # text search
                 print(f"Processing text query: {query_text}")
-                device = next(model.parameters()).device
                 text = clip.tokenize([query_text]).to(device)
                 with torch.no_grad():
                     query_embedding = model.encode_text(text)
@@ -156,6 +319,7 @@ async def search_images(
             
         except Exception as e:
             print(f"Error generating embedding: {str(e)}")
+            search_progress[search_id]['error'] = f"Error processing query: {str(e)}"
             raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
         # Process folder path
@@ -166,68 +330,42 @@ async def search_images(
             print(f"Searching in folder: {folder}")
         except Exception as e:
             print(f"Error with folder path: {str(e)}")
+            search_progress[search_id]['error'] = f"Invalid folder path: {str(e)}"
             raise HTTPException(status_code=400, detail=f"Invalid folder path: {str(e)}")
         
-        # Search similar images
-        try:
-            results = search_similar_images(
-                query_embedding,
-                folder,
-                model,
-                preprocess,
-                min_score=min_score,
-                batch_size=batch_size,
-                query_text=query_text if search_type == 'text' else None  # Pass query_text only for text search
-            )
-            print(f"Found {len(results)} results")
-        except Exception as e:
-            print(f"Error during image search: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error during search: {str(e)}")
-
-        # Process results
-        try:
-            processed_results = []
-            for result in results:
-                with Image.open(result["path"]) as img:
-                    width, height = img.size
-                    aspect_ratio = height / width
-                
-                processed_results.append({
-                    "path": result["path"],
-                    "filename": os.path.basename(result["path"]),
-                    "score": result["score"],
-                    "description": result["description"],
-                    "width": width,
-                    "height": height,
-                    "aspect_ratio": aspect_ratio
-                })
-            print("Results processed successfully")
-        except Exception as e:
-            print(f"Error processing results: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error processing results: {str(e)}")
-
-        # Save settings
-        try:
-            save_last_settings(
-                query_path if search_type == 'image' else None,
-                folder,
-                processed_results
-            )
-        except Exception as e:
-            print(f"Error saving settings: {str(e)}")
-            # Don't fail the request if settings save fails
-            pass
-
-        return JSONResponse({
-            "query_path": query_path if search_type == 'image' else None,
-            "results": processed_results
-        })
-
+        # Start background processing
+        background_tasks.add_task(
+            process_search,
+            search_id=search_id,
+            folder=folder,
+            query_embedding=query_embedding,
+            model=model,
+            preprocess=preprocess,
+            min_score=min_score,
+            batch_size=batch_size,
+            search_type=search_type,
+            query_text=query_text,
+            device=device
+        )
+        
+        return {"search_id": search_id}
+        
     except HTTPException as he:
+        search_progress[search_id]['error'] = str(he.detail)
         raise he
     except Exception as e:
         print(f"Unexpected error in search endpoint: {str(e)}")
+        search_progress[search_id]['error'] = f"Unexpected error: {str(e)}"
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    finally:
+        # Clean up progress after 5 minutes
+        asyncio.create_task(cleanup_progress(search_id))
+
+async def cleanup_progress(search_id: str):
+    """Remove search progress after a delay"""
+    await asyncio.sleep(300)  # 5 minutes
+    if search_id in search_progress:
+        del search_progress[search_id]
 
 if __name__ == "__main__":
     import uvicorn
