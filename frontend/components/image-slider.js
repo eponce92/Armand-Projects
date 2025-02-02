@@ -37,14 +37,25 @@ class ImageSlider {
       if (e.key === 'ArrowLeft') this.prev();
       if (e.key === 'ArrowRight') this.next();
     });
+
+    // Add click event delegation for preview images
+    this.slider.addEventListener('click', (e) => {
+      const previewItem = e.target.closest('.slider-item');
+      if (previewItem && !previewItem.classList.contains('active')) {
+        const items = Array.from(this.slider.children);
+        const clickedIndex = items.indexOf(previewItem);
+        if (clickedIndex > 0) {  // Only handle preview images (index > 0)
+          this.goToImage(clickedIndex);
+        }
+      }
+    });
   }
 
   loadImages(images, startIndex = 0) {
-    // Reorder images array so that the clicked image becomes first
-    const orderedImages = [...images.slice(startIndex), ...images.slice(0, startIndex)];
-    this.images = orderedImages;
+    this.images = images;
+    this.currentIndex = startIndex;
     
-    this.slider.innerHTML = orderedImages.map((img, index) => `
+    this.slider.innerHTML = images.map((img, index) => `
       <li class="slider-item" style="background-image: url('/image/${encodeURIComponent(img.path)}')">
         <div class="slider-content">
           <div class="score">Match Score: ${(img.score * 100).toFixed(1)}%</div>
@@ -53,9 +64,36 @@ class ImageSlider {
         </div>
       </li>
     `).join('');
+
+    // Reorder slides to show the clicked image
+    if (startIndex > 0) {
+      const items = Array.from(this.slider.children);
+      for (let i = 0; i < startIndex; i++) {
+        this.slider.appendChild(items[i]);
+      }
+    }
   }
 
-  show(startIndex = 0) {
+  goToImage(index) {
+    const items = Array.from(this.slider.children);
+    const currentFirst = items[0];
+    
+    // Calculate how many positions to move
+    const positions = index;
+    
+    // Move the required number of items to the end
+    for (let i = 0; i < positions; i++) {
+      const item = items[i];
+      this.slider.appendChild(item);
+    }
+    
+    // Update slides immediately after DOM change
+    requestAnimationFrame(() => {
+      this.updateSlides();
+    });
+  }
+
+  show() {
     document.querySelector('.slider-modal').classList.add('active');
     document.body.style.overflow = 'hidden';
     this.updateSlides();
@@ -107,6 +145,7 @@ class ImageSlider {
       
       if (i === 0) {
         // Main view image (active slide)
+        item.classList.add('active');
         item.style.width = '100%';
         item.style.height = '100%';
         item.style.top = '0';
@@ -117,8 +156,10 @@ class ImageSlider {
         item.style.borderRadius = '0';
         item.style.boxShadow = 'none';
         item.style.opacity = '1';
+        item.style.cursor = 'default';
       } else {
         // Preview images
+        item.classList.remove('active');
         const rightPosition = i === 1 ? 'calc(440px + 2rem)' :
                             i === 2 ? 'calc(220px + 1rem)' :
                             i === 3 ? '2rem' : '-220px';
@@ -133,6 +174,7 @@ class ImageSlider {
         item.style.borderRadius = '20px';
         item.style.boxShadow = '0 20px 30px rgba(255, 255, 255, 0.3) inset';
         item.style.opacity = i >= 4 ? '0' : '1';
+        item.style.cursor = 'pointer';
       }
       
       // Re-enable transitions after a frame
