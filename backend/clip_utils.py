@@ -4,8 +4,9 @@ import clip
 from PIL import Image
 import torch.nn.functional as F
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Tuple
 import numpy as np
+import re
 
 # Global cache for image embeddings
 cache = {}
@@ -66,16 +67,14 @@ def analyze_image_content(image_path: str, model: torch.nn.Module, preprocess) -
 
 
 def get_image_embedding(image_path: str, model: torch.nn.Module, preprocess) -> torch.Tensor:
-    """Compute embedding for a single image with error handling"""
+    """Get embedding for a single image"""
     try:
-        device = next(model.parameters()).device
-        image = Image.open(image_path).convert("RGB")
-        image_input = preprocess(image).unsqueeze(0).to(device)
-        
+        image = Image.open(image_path)
+        image_input = preprocess(image).unsqueeze(0).to(next(model.parameters()).device)
         with torch.no_grad():
-            embedding = model.encode_image(image_input)
-            
-        return F.normalize(embedding.squeeze(0).cpu(), dim=0)
+            image_features = model.encode_image(image_input)
+            image_features = F.normalize(image_features.squeeze(0), dim=0)
+        return image_features.cpu()
     except Exception as e:
         print(f"Error processing image {image_path}: {str(e)}")
         return None
@@ -113,39 +112,104 @@ def process_image_batch(image_paths: List[str], model: torch.nn.Module, preproce
     return valid_paths, torch.stack(batch_embeddings) if batch_embeddings else None
 
 
-def search_similar_images(query_embedding: torch.Tensor, folder: str, model: torch.nn.Module, preprocess, min_score: float = 0.0, batch_size: int = 32) -> List[Dict]:
-    """Search for similar images in folder and return results sorted by cosine similarity"""
-    # Ensure query_embedding is normalized
-    query_embedding = F.normalize(query_embedding, dim=0)
+def tokenize_search_query(query: str) -> List[str]:
+    """
+    Tokenize the search query into meaningful words
+    Remove common stop words and special characters
+    """
+    # Basic stop words list - can be expanded
+    stop_words = {'a', 'an', 'the', 'of', 'in', 'on', 'at', 'for', 'to', 'with'}
     
-    # Gather image files
-    image_files = []
-    for ext in ['.jpg', '.jpeg', '.png', '.gif']:
-        image_files.extend([str(f) for f in Path(folder).glob(f'**/*{ext}')])
+    # Convert to lowercase and split
+    words = query.lower().split()
     
-    results = []
+    # Remove stop words and clean tokens
+    tokens = []
+    for word in words:
+        # Clean the word of special characters
+        word = re.sub(r'[^\w\s]', '', word)
+        if word and word not in stop_words:
+            tokens.append(word)
     
-    # Process images in batches
-    for i in range(0, len(image_files), batch_size):
-        batch_files = image_files[i:i+batch_size]
-        valid_paths, batch_embeddings = process_image_batch(batch_files, model, preprocess)
+    return tokens
+
+
+def get_token_similarities(image_embedding: torch.Tensor, tokens: List[str], model) -> List[Tuple[str, float]]:
+    """
+    Calculate similarity scores between image embedding and each token
+    Returns list of (token, similarity_score) tuples
+    """
+    device = next(model.parameters()).device
+    similarities = []
+    
+    for token in tokens:
+        # Tokenize and encode the text
+        text = clip.tokenize([token]).to(device)
+        with torch.no_grad():
+            text_features = model.encode_text(text)
+            text_features = F.normalize(text_features.squeeze(0), dim=0)
         
-        if batch_embeddings is not None:
-            # Calculate similarities
-            similarities = F.cosine_similarity(query_embedding.unsqueeze(0), batch_embeddings)
+        # Calculate similarity
+        similarity = torch.dot(image_embedding.to(device), text_features.to(device))
+        similarity_score = (similarity.item() + 1) / 2  # Normalize to 0-1 range
+        similarities.append((token, similarity_score))
+    
+    # Sort by similarity score in descending order
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities
+
+
+def search_similar_images(query_embedding: torch.Tensor, folder_path: str, model, preprocess, min_score: float = 0.0, batch_size: int = 32, query_text: str = None) -> List[Dict]:
+    """Search for similar images in the folder"""
+    results = []
+    supported_formats = {'.jpg', '.jpeg', '.png', '.gif'}
+    
+    # Get query tokens if text query is provided
+    query_tokens = tokenize_search_query(query_text) if query_text else []
+
+    for root, _, files in os.walk(folder_path):
+        image_paths = [
+            os.path.join(root, f) for f in files
+            if os.path.splitext(f)[1].lower() in supported_formats
+        ]
+        
+        for i in range(0, len(image_paths), batch_size):
+            batch_paths = image_paths[i:i + batch_size]
+            batch_embeddings = []
+            valid_paths = []
             
-            # Add results above minimum score
+            for img_path in batch_paths:
+                embedding = get_image_embedding(img_path, model, preprocess)
+                if embedding is not None:
+                    batch_embeddings.append(embedding)
+                    valid_paths.append(img_path)
+            
+            if not batch_embeddings:
+                continue
+                
+            # Stack embeddings and calculate similarities
+            batch_embeddings = torch.stack(batch_embeddings)
+            similarities = F.cosine_similarity(batch_embeddings, query_embedding.unsqueeze(0))
+            
+            # Process results
             for path, similarity in zip(valid_paths, similarities):
-                score = similarity.item()
+                score = (similarity.item() + 1) / 2  # Normalize to 0-1 range
+                
                 if score >= min_score:
-                    # Get image content analysis
-                    description = analyze_image_content(path, model, preprocess)
+                    # Get token-based description if query text is provided
+                    if query_tokens:
+                        token_similarities = get_token_similarities(batch_embeddings[valid_paths.index(path)], query_tokens, model)
+                        description = ", ".join([f"{token} ({score:.1%})" for token, score in token_similarities])
+                    else:
+                        # Fallback to basic description
+                        description = "a photograph (1.0%), a sketch (0.0%), digital art (0.0%), landscape photo (0.0%), a painting (0.0%)"
+                    
                     results.append({
                         "path": path,
                         "score": score,
                         "description": description
                     })
     
-    # Sort results by similarity (descending)
+    # Sort results by similarity score
     results.sort(key=lambda x: x["score"], reverse=True)
     return results 

@@ -79,11 +79,14 @@
 
             <div class="filters">
               <div class="mb-4">
-                <label for="minScore" class="form-label d-flex justify-content-between">
-                  <span>Minimum Similarity Score</span>
-                  <span id="minScoreValue" class="badge bg-primary">0.2</span>
-                </label>
-                <input type="range" class="form-range" id="minScore" min="0" max="1" step="0.05" value="0.2">
+                <div class="form-label">
+                  Minimum Similarity Score
+                  <div class="score-badge-container">
+                    <span id="minScoreValue">0%</span>
+                  </div>
+                </div>
+                <input type="range" class="form-range" id="minScore" 
+                  min="0" max="100" value="0" step="1">
               </div>
               <div class="mb-3">
                 <label for="batchSize" class="form-label">Processing Batch Size</label>

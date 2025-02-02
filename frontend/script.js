@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Update min score display with badge
   minScoreInput.addEventListener('input', function() {
-    minScoreValue.textContent = this.value;
+    minScoreValue.textContent = `${this.value}%`;
   });
 
   // Folder selection handling
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const formData = new FormData();
     formData.append('folder', folderPath.value);
-    formData.append('min_score', minScoreInput.value);
+    formData.append('min_score', minScoreInput.value / 100);
     formData.append('batch_size', batchSize.value);
     formData.append('search_type', currentSearchType);
 
@@ -314,8 +314,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // Add click handler to view in slider
       item.addEventListener('click', () => {
-        imageSlider.loadImages(results);
-        imageSlider.show(index);
+        imageSlider.loadImages(results, index);
+        imageSlider.show();
       });
 
       gallery.appendChild(item);

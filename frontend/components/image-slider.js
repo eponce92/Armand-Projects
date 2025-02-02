@@ -39,9 +39,12 @@ class ImageSlider {
     });
   }
 
-  loadImages(images) {
-    this.images = images;
-    this.slider.innerHTML = images.map((img, index) => `
+  loadImages(images, startIndex = 0) {
+    // Reorder images array so that the clicked image becomes first
+    const orderedImages = [...images.slice(startIndex), ...images.slice(0, startIndex)];
+    this.images = orderedImages;
+    
+    this.slider.innerHTML = orderedImages.map((img, index) => `
       <li class="slider-item" style="background-image: url('/image/${encodeURIComponent(img.path)}')">
         <div class="slider-content">
           <div class="score">Match Score: ${(img.score * 100).toFixed(1)}%</div>
@@ -53,7 +56,6 @@ class ImageSlider {
   }
 
   show(startIndex = 0) {
-    this.currentIndex = startIndex;
     document.querySelector('.slider-modal').classList.add('active');
     document.body.style.overflow = 'hidden';
     this.updateSlides();
@@ -103,8 +105,8 @@ class ImageSlider {
       // Reset transitions initially
       item.style.transition = 'none';
       
-      if (i === 0 || i === 1) {
-        // Main view images
+      if (i === 0) {
+        // Main view image (active slide)
         item.style.width = '100%';
         item.style.height = '100%';
         item.style.top = '0';
@@ -117,9 +119,9 @@ class ImageSlider {
         item.style.opacity = '1';
       } else {
         // Preview images
-        const rightPosition = i === 2 ? 'calc(440px + 2rem)' :
-                            i === 3 ? 'calc(220px + 1rem)' :
-                            i === 4 ? '2rem' : '-220px';
+        const rightPosition = i === 1 ? 'calc(440px + 2rem)' :
+                            i === 2 ? 'calc(220px + 1rem)' :
+                            i === 3 ? '2rem' : '-220px';
         
         item.style.width = '200px';
         item.style.height = '300px';
@@ -130,7 +132,7 @@ class ImageSlider {
         item.style.transform = 'none';
         item.style.borderRadius = '20px';
         item.style.boxShadow = '0 20px 30px rgba(255, 255, 255, 0.3) inset';
-        item.style.opacity = i >= 5 ? '0' : '1';
+        item.style.opacity = i >= 4 ? '0' : '1';
       }
       
       // Re-enable transitions after a frame
@@ -146,7 +148,8 @@ class ImageSlider {
       content.style.opacity = '0';
     });
 
-    const activeContent = items[1].querySelector('.slider-content');
+    // Show content for the active (first) slide
+    const activeContent = items[0].querySelector('.slider-content');
     activeContent.style.display = 'block';
     requestAnimationFrame(() => {
       activeContent.style.opacity = '1';

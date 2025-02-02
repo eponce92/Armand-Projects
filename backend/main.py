@@ -176,7 +176,8 @@ async def search_images(
                 model,
                 preprocess,
                 min_score=min_score,
-                batch_size=batch_size
+                batch_size=batch_size,
+                query_text=query_text if search_type == 'text' else None  # Pass query_text only for text search
             )
             print(f"Found {len(results)} results")
         except Exception as e:
