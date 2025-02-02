@@ -1,7 +1,9 @@
 class ImageSlider {
   constructor() {
+    console.log('Initializing ImageSlider');
     this.createSliderModal();
     this.slider = document.querySelector('.slider');
+    console.log('Slider element:', this.slider);
     this.currentIndex = 0;
     this.images = [];
     this.setupEventListeners();
@@ -58,9 +60,12 @@ class ImageSlider {
     this.slider.innerHTML = images.map((img, index) => `
       <li class="slider-item" style="background-image: url('/image/${encodeURIComponent(img.path)}')">
         <div class="slider-content">
-          <div class="score">Match Score: ${(img.score * 100).toFixed(1)}%</div>
-          <h2 class="title">${img.filename}</h2>
-          <p class="description">${img.description}</p>
+          ${img.description ? `
+            <h2 class="title">${img.filename}</h2>
+            <p class="description">${img.description}</p>
+          ` : `
+            <div class="match-score">Match Score: ${(img.score * 100).toFixed(1)}%</div>
+          `}
         </div>
       </li>
     `).join('');
@@ -72,6 +77,11 @@ class ImageSlider {
         this.slider.appendChild(items[i]);
       }
     }
+
+    // Update slides immediately
+    requestAnimationFrame(() => {
+      this.updateSlides();
+    });
   }
 
   goToImage(index) {
@@ -94,7 +104,10 @@ class ImageSlider {
   }
 
   show() {
-    document.querySelector('.slider-modal').classList.add('active');
+    console.log('Showing slider modal');
+    const modal = document.querySelector('.slider-modal');
+    console.log('Modal element:', modal);
+    modal.classList.add('active');
     document.body.style.overflow = 'hidden';
     this.updateSlides();
   }
@@ -146,35 +159,58 @@ class ImageSlider {
       if (i === 0) {
         // Main view image (active slide)
         item.classList.add('active');
-        item.style.width = '100%';
-        item.style.height = '100%';
-        item.style.top = '0';
-        item.style.left = '0';
-        item.style.right = 'auto';
-        item.style.bottom = 'auto';
-        item.style.transform = 'none';
-        item.style.borderRadius = '0';
-        item.style.boxShadow = 'none';
+        
+        // Get container dimensions
+        const containerWidth = window.innerWidth * 0.9;
+        const containerHeight = window.innerHeight * 0.9;
+        
+        // Get image aspect ratio
+        const imgAspectRatio = this.images[i].width / this.images[i].height;
+        const containerAspectRatio = containerWidth / containerHeight;
+        
+        let width, height;
+        if (imgAspectRatio > containerAspectRatio) {
+          // Image is wider than container
+          width = containerWidth;
+          height = containerWidth / imgAspectRatio;
+        } else {
+          // Image is taller than container
+          height = containerHeight;
+          width = containerHeight * imgAspectRatio;
+        }
+        
+        // Center the image
+        item.style.width = `${width}px`;
+        item.style.height = `${height}px`;
+        item.style.position = 'absolute';
+        item.style.left = '50%';
+        item.style.top = '50%';
+        item.style.transform = 'translate(-50%, -50%)';
+        item.style.margin = '0';
+        item.style.borderRadius = '2rem';
+        item.style.boxShadow = 'var(--shadow)';
         item.style.opacity = '1';
         item.style.cursor = 'default';
+        item.style.backgroundColor = 'var(--greyLight-1)';
       } else {
         // Preview images
         item.classList.remove('active');
-        const rightPosition = i === 1 ? 'calc(440px + 2rem)' :
-                            i === 2 ? 'calc(220px + 1rem)' :
-                            i === 3 ? '2rem' : '-220px';
+        const rightPosition = i === 1 ? 'calc(44rem + 2rem)' :
+                            i === 2 ? 'calc(22rem + 1rem)' :
+                            i === 3 ? '2rem' : '-22rem';
         
-        item.style.width = '200px';
-        item.style.height = '300px';
+        item.style.width = '20rem';
+        item.style.height = '30rem';
         item.style.right = rightPosition;
         item.style.bottom = '2rem';
         item.style.top = 'auto';
         item.style.left = 'auto';
         item.style.transform = 'none';
-        item.style.borderRadius = '20px';
-        item.style.boxShadow = '0 20px 30px rgba(255, 255, 255, 0.3) inset';
+        item.style.borderRadius = '1.6rem';
+        item.style.boxShadow = 'var(--shadow)';
         item.style.opacity = i >= 4 ? '0' : '1';
         item.style.cursor = 'pointer';
+        item.style.backgroundColor = 'var(--greyLight-1)';
       }
       
       // Re-enable transitions after a frame
@@ -186,19 +222,35 @@ class ImageSlider {
     // Update content visibility
     items.forEach(item => {
       const content = item.querySelector('.slider-content');
-      content.style.display = 'none';
-      content.style.opacity = '0';
+      if (content) {
+        content.style.display = 'block';
+        content.style.opacity = '0';
+      }
     });
 
     // Show content for the active (first) slide
     const activeContent = items[0].querySelector('.slider-content');
-    activeContent.style.display = 'block';
-    requestAnimationFrame(() => {
-      activeContent.style.opacity = '1';
-    });
+    if (activeContent) {
+      activeContent.style.display = 'block';
+      requestAnimationFrame(() => {
+        activeContent.style.opacity = '1';
+      });
+    }
   }
 }
 
 // Initialize and export the slider
-const imageSlider = new ImageSlider();
-export default imageSlider; 
+let imageSlider;
+
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM loaded, initializing slider');
+  imageSlider = new ImageSlider();
+});
+
+export default {
+  loadImages: (...args) => imageSlider.loadImages(...args),
+  show: () => imageSlider.show(),
+  close: () => imageSlider.close(),
+  prev: () => imageSlider.prev(),
+  next: () => imageSlider.next()
+}; 

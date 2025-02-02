@@ -159,6 +159,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Update modal display functions
   function showModal(imagePath) {
+    // Remove any existing /image/ prefix to avoid double encoding
+    imagePath = imagePath.replace('/image/', '');
     modalImage.src = `/image/${encodeURIComponent(imagePath)}`;
     imageModal.style.display = 'block';
     document.body.style.overflow = 'hidden';
@@ -366,13 +368,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       details.className = 'item__details';
       details.innerHTML = `
         <div class="details-content">
-          <div class="details-header">
-            <span class="match-number" title="${result.filename}">${result.filename}</span>
-            <span class="match-score">${(result.score * 100).toFixed(1)}%</span>
-          </div>
-          <div class="match-description" title="${result.description}">
-            ${result.description}
-          </div>
+          ${currentSearchType === 'text' ? `
+            <div class="details-header">
+              <span class="match-number" title="${result.filename}">${result.filename}</span>
+              <span class="match-score">${(result.score * 100).toFixed(1)}%</span>
+            </div>
+            <div class="match-description" title="${result.description}">
+              ${result.description}
+            </div>
+          ` : `
+            <div class="match-score">${(result.score * 100).toFixed(1)}%</div>
+          `}
         </div>
       `;
       
@@ -382,8 +388,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       // Add click handler to view in slider
       item.addEventListener('click', () => {
-        imageSlider.loadImages(results, index);
-        imageSlider.show();
+        console.log('Gallery item clicked:', result);
+        try {
+          imageSlider.loadImages(results, index);
+          imageSlider.show();
+        } catch (error) {
+          console.error('Error showing image in slider:', error);
+        }
       });
 
       gallery.appendChild(item);

@@ -161,6 +161,7 @@ async def process_search(
     batch_size: int,
     search_type: str,
     query_text: str = None,
+    query_path: str = None,
     device = None
 ):
     """Asynchronous function to process search request"""
@@ -336,6 +337,7 @@ async def search_images(
             batch_size=batch_size,
             search_type=search_type,
             query_text=query_text,
+            query_path=query_path,
             device=device
         )
         
